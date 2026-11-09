@@ -42,7 +42,7 @@
     .animate-marquee {
       display: inline-block;
       white-space: nowrap;
-      animation: marquee 20s linear infinite;
+      animation: marquee 22s linear infinite;
     }
     .sncf-text-shadow {
       text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
@@ -53,7 +53,7 @@
 
   <div class="flex-1 flex flex-col justify-between p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
 
-    <!-- En-tête sans boutons d'édition -->
+    <!-- En-tête -->
     <header class="bg-sncf-board border-b-4 border-sncf-yellow rounded-t-xl p-4 sm:p-6 shadow-2xl flex justify-between items-center">
       <div class="flex items-center gap-4">
         <div class="bg-sncf-yellow text-sncf-bg font-black px-4 py-2 rounded text-base sm:text-lg tracking-tighter uppercase flex items-center gap-2">
@@ -114,63 +114,9 @@
     let marqueeMessages = [];
     let currentMarqueeIndex = 0;
     let marqueeTimer = null;
+    const CLOUD_SYNC_KEY = 'sncf_board_global_sync_v1';
 
-    function loadState() {
-      try {
-        const savedTrains = localStorage.getItem('sncf_trains');
-        if (savedTrains) trains = JSON.parse(savedTrains);
-
-        const savedStation = localStorage.getItem('sncf_station_name');
-        if (savedStation) {
-          const el = document.getElementById('station-name-display');
-          if (el) el.textContent = savedStation;
-        }
-
-        const savedMarquee = localStorage.getItem('sncf_marquee_messages');
-        if (savedMarquee) marqueeMessages = JSON.parse(savedMarquee);
-      } catch (e) {
-        console.warn("Erreur chargement:", e);
-      }
-      renderBoard();
-    }
-
-    function startMarqueeRotation() {
-      updateMarqueeDisplay();
-      if (marqueeTimer) clearInterval(marqueeTimer);
-      marqueeTimer = setInterval(() => {
-        if (marqueeMessages.length > 0) {
-          currentMarqueeIndex = (currentMarqueeIndex + 1) % marqueeMessages.length;
-          updateMarqueeDisplay();
-        }
-      }, 22000);
-    }
-
-    function updateMarqueeDisplay() {
-      const marqueeEl = document.getElementById('marquee-text');
-      const badgeTextEl = document.getElementById('marquee-badge-text');
-      if (!marqueeEl) return;
-
-      if (!marqueeMessages || marqueeMessages.length === 0) {
-        marqueeEl.textContent = "Bienvenue en gare. Bon voyage !";
-        if (badgeTextEl) badgeTextEl.textContent = "INFO";
-        return;
-      }
-
-      if (currentMarqueeIndex >= marqueeMessages.length) currentMarqueeIndex = 0;
-
-      marqueeEl.classList.remove('animate-marquee');
-      void marqueeEl.offsetWidth;
-      marqueeEl.textContent = marqueeMessages[currentMarqueeIndex];
-      marqueeEl.classList.add('animate-marquee');
-
-      if (badgeTextEl) {
-        badgeTextEl.textContent = marqueeMessages.length > 1 
-          ? `INFO (${currentMarqueeIndex + 1}/${marqueeMessages.length})` 
-          : "INFORMATION";
-      }
-    }
-
-    function renderBoard() {
+    window.renderBoard = function() {
       const tbody = document.getElementById('train-table-body');
       const emptyState = document.getElementById('empty-state');
       if (!tbody) return;
@@ -205,7 +151,73 @@
         });
       }
       if (window.lucide) lucide.createIcons();
-    }
+    };
+
+    window.loadState = function() {
+      try {
+        // Lecture directe depuis la synchronisation globale partagée
+        const cloudDataRaw = localStorage.getItem(CLOUD_SYNC_KEY);
+        if (cloudDataRaw) {
+          const cloudData = JSON.parse(cloudDataRaw);
+          if (cloudData.trains) trains = cloudData.trains;
+          if (cloudData.stationName) {
+            const el = document.getElementById('station-name-display');
+            if (el) el.textContent = cloudData.stationName;
+          }
+          if (cloudData.marqueeMessages) marqueeMessages = cloudData.marqueeMessages;
+          if (cloudData.currentMode && cloudData.currentMode !== currentMode) {
+            currentMode = cloudData.currentMode;
+            const modeTitle = document.getElementById('mode-title');
+            const modeIcon = document.getElementById('mode-icon');
+            const thDestProv = document.getElementById('th-destination-provenance');
+            if (modeTitle) modeTitle.textContent = currentMode === 'DEPARTS' ? 'DÉPARTS' : 'ARRIVÉES';
+            if (thDestProv) thDestProv.textContent = currentMode === 'DEPARTS' ? 'Destination' : 'Provenance';
+            if (modeIcon) {
+              modeIcon.setAttribute('data-lucide', currentMode === 'DEPARTS' ? 'arrow-up-right' : 'arrow-down-left');
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Erreur chargement cloud:", e);
+      }
+      if (typeof window.renderBoard === 'function') window.renderBoard();
+    };
+
+    window.updateMarqueeDisplay = function() {
+      const marqueeEl = document.getElementById('marquee-text');
+      const badgeTextEl = document.getElementById('marquee-badge-text');
+      if (!marqueeEl) return;
+
+      if (!marqueeMessages || marqueeMessages.length === 0) {
+        marqueeEl.textContent = "Bienvenue en gare. Bon voyage !";
+        if (badgeTextEl) badgeTextEl.textContent = "INFO";
+        return;
+      }
+
+      if (currentMarqueeIndex >= marqueeMessages.length) currentMarqueeIndex = 0;
+
+      marqueeEl.classList.remove('animate-marquee');
+      void marqueeEl.offsetWidth;
+      marqueeEl.textContent = marqueeMessages[currentMarqueeIndex];
+      marqueeEl.classList.add('animate-marquee');
+
+      if (badgeTextEl) {
+        badgeTextEl.textContent = marqueeMessages.length > 1 
+          ? `INFO (${currentMarqueeIndex + 1}/${marqueeMessages.length})` 
+          : "INFORMATION";
+      }
+    };
+
+    window.startMarqueeRotation = function() {
+      window.updateMarqueeDisplay();
+      if (marqueeTimer) clearInterval(marqueeTimer);
+      marqueeTimer = setInterval(() => {
+        if (marqueeMessages && marqueeMessages.length > 0) {
+          currentMarqueeIndex = (currentMarqueeIndex + 1) % marqueeMessages.length;
+          window.updateMarqueeDisplay();
+        }
+      }, 22000);
+    };
 
     function updateClock() {
       const now = new Date();
@@ -215,17 +227,19 @@
       }
     }
 
-    // ÉCOUTEUR DE SYNCHRONISATION EN TEMPS RÉEL (Storage Event)
-    window.addEventListener('storage', (e) => {
-      loadState();
-      updateMarqueeDisplay();
+    window.addEventListener('storage', () => {
+      window.loadState();
+      window.updateMarqueeDisplay();
     });
 
     window.onload = function() {
-      loadState();
+      window.loadState();
+      setInterval(window.loadState, 800);
       updateClock();
       setInterval(updateClock, 1000);
-      startMarqueeRotation();
+      if (typeof window.startMarqueeRotation === 'function') {
+        window.startMarqueeRotation();
+      }
       if (window.lucide) lucide.createIcons();
     };
   </script>
